@@ -96,10 +96,10 @@ The main.cpp file performs the following steps:
 - send to simulator the coordinates of the ego vehicle trajectory 
 
 #### Vehicle object definition
-I have defined a `Vehicle` class (in vehicle.cpp) which contains all the characteristics of vehicles and which is used for both ego vehicle and all other vehicles. Upon receiving a message from the simulator, a list of Vehicle objects is built which gathers information from other vehicles (id, position coordinates, speed). An ego vehicle object is also built with the information pertaining to the ego vehicles, which also includes previous path and map data.
+I have defined a `Vehicle` class (in vehicle.cpp) which contains all the characteristics of vehicles and which is used for both ego vehicle and all other vehicles. Upon receiving a message from the simulator, a list of Vehicle objects is built which gathers information from other vehicles (id, position coordinates, speed). An ego vehicle object is also built with the information pertaining to the ego vehicle, which also includes previous path and map data.
 
 #### Other vehicle predictions
-The other vehicle predictions are done within the function `generate_predictions` of `Vehicle` class. The prediction model is very simple: it takes the current "s" position in Frenet coordinates and propagates it with a first order model using the velocity: `s(n) = s(0)+n*v*T`, where T equals 20 ms. The trajectory is built over 50 points, that is 1 s. The "d" Frenet coordinate is supposed to be constant over the trajectory: `s(n) = s(0)`
+The vehicle predictions are done within the function `generate_predictions` of `Vehicle` class. The prediction model is very simple: it takes the current "s" position in Frenet coordinates and propagates it with a first order model using the velocity: `s(n) = s(0)+n*v(0)*T`, where T equals 20 ms. The trajectory is built over 50 points, that is 1 s. The "d" Frenet coordinate is supposed to be constant over the trajectory: `d(n) = d(0)`
 
 #### Ego vehicle planner and trajectory generation
 This is the main part of the program. The core function is `def_new_traj`  within `Vehicle` class, but it makes use of several other functions. The  steps of the algorithm are the following (it is largely inspired from the "behavior planner" implementation done in class) :
@@ -116,23 +116,23 @@ The successor state listing is done within `successor_states` function: it only 
 
 ##### Trajectory generation
 This step is done within `generate_trajectory` function.  First step consists in determining the goal lane, according to the selected state.
-Second step is to determine the achievable speed in the goal lane. This is done with `get_velocity` function which checks velocity of other vehicles in the goal lane, but only those which are ahead of the car within a predefined range (40m). If a car is present ahead and goes slower, the ego car target speed will be decreased, slightly so as to respect maximum allowed jerk). If no car is present, the car will increase speed so as to reach maximum authorized speed (50 mph).
-Final step is to generate a trajectory to reach goal lane. This is done within `gen_raw_traj` function. Objective is to create paths that can smoothly changes lanes when required. The algorithm which is implemented within this function is the same as the one which was presented in the project walkthrough : instead of using quintic polynomials as studied in class, I used the easier implementation presented in the project walkthrough, which consists in using cubic spline interpolation between the current car position and the car's goal destination. The cubic spline interpolation is done thanks to a spline tool which can be found [here](http://kluge.in-chemnitz.de/opensource/spline/). To ensure a smooth transition between previous and new trajectory, we keep a few points from the previous trajectory (at the beginning). I chose to keep 6 points. It was sufficient to ensure continuity while not impeding the car's reactivity.
+Second step is to determine the achievable speed in the goal lane. This is done with `get_velocity` function which checks velocity of other vehicles in the goal lane, but only those which are ahead of the car within a predefined range (40m). If a car is present ahead and goes slower, the ego car target speed will be decreased. Deceleration is smooth so as to respect maximum allowed jerk. If no car is present, the car will increase speed so as to reach maximum authorized speed (50 mph).
+Final step is to generate a trajectory to reach goal lane. This is done within `gen_raw_traj` function. Objective is to create smooth paths when a lane change is required. The algorithm which is implemented within this function is the same as the one which was presented in the project walkthrough : instead of using quintic polynomials as studied in class, I used the easier implementation presented in the project walkthrough, which consists in using cubic spline interpolation between the current car position and the car's goal destination. The cubic spline interpolation is done thanks to a spline tool which can be found [here](http://kluge.in-chemnitz.de/opensource/spline/). To ensure a smooth transition between previous and new trajectory, we keep a few points from the previous trajectory (at the beginning). I chose to keep 10 points. It was sufficient to ensure continuity while not impeding the car's reactivity.
 
 ##### Cost functions
 The cost functions are defined to penalize unsafe or uncomfortable trajectories. The following cost functions were implemented (in `cost.cpp`):
 - `collision_cost`: ego vehicle trajectory is compared with other vehicle predicted trajectories. If position differences go below 3m, a collision is considered and a cost of 1 is set. This function makes uses of `nearest_approach_to_any_vehicle` function (defined in helper_functions.cpp).
 
-- `buffer_cost`: objective is to penalize lane changes which occur without a minimum margin. Here I set the margin to +3m (ahead), -5m (behind). Cost is set to 1 if margin is violated, 0 else. This function makes uses of `get_vehicle_alongside`, which is a member function of `Vehicle` class.
+- `buffer_cost`: objective is to penalize lane changes which occur without a minimum margin with respect to other cars. Here I set the margin to +3m (ahead), -5m (behind). Cost is set to 1 if margin is violated, 0 else. This function makes uses of `get_vehicle_alongside`, which is a member function of `Vehicle` class.
 - `inefficiency_cost`: objective is to reward high speed. Cost function is a sigmoid function of the reference velocity.
 
 We can set different weights to the cost functions. I decided to put the higher weight on the collision avoidance cost.
 
 ### Results
 The car turns out to safely drive round the highway. It changes lanes appropriately when approaching slower cars, only if the adjacent lane is empty.
-However algorithm is not perfect. I indeed observed two limitations :
-- in the specific situation where the car is "trapped" between two vehicles going at the same speed: one ahead and one just aside in the adjacent line (in the middle of the highway). Ego vehicle is stuck and can remain forever blocked in the traffic. 
-- in the specific situation where a "wall of car" is ahead, whose velocities are almost the same but are fluctuating. Ego vehicle may start a lane change but then revert to "keep lane" if the car ahead velocity increases a bit. This makes ego vehicle wobbling between the two lanes, and the simulator grades this as an incident. 
+However algorithm is not perfect. I indeed observed two weaknesses:
+- in the specific situation where the car is "trapped" between two vehicles which move at the same speed: one ahead and one just aside in the adjacent line (in the middle of the highway). This prevents any lane change and dgo vehicle is stuck in the slow traffic. 
+- in the specific situation where a "wall of car" is ahead, whose velocities are almost the same but are fluctuating. Ego vehicle may start a lane change but then revert to "keep lane" if the car ahead's velocity increases a bit. This makes ego vehicle wobbling between the two lanes, and the simulator grades this as an incident. 
 
 It would be necessary to implement more complex algorithms, with memory of the previous situation, to cope with these two cases.
 
